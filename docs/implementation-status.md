@@ -23,10 +23,12 @@ in-process server (`DBCONNECTOR_INTEGRATION=1` engine tests) and `target/release
 - MySQL transactions were unusable. `sql_begin_transaction` returned `QUERY_FAILED: error returned from database: 1295 (HY000): This command is not supported in the prepared statement protocol yet` for both `read_only` values, so `sql_commit_transaction` and `sql_rollback_transaction` could not be reached. Root cause: transaction control was issued as a prepared `sqlx::Query`, and MySQL rejects `START TRANSACTION` in the prepared-statement protocol. Fix: run transaction control through the driver's simple query path by executing a `&str`, which is the same path sqlx uses for its own transactions. A first attempt with `sqlx::raw_sql` compiled but made the server future fail the `Send` check (`implementation of Executor is not general enough`); executing `&str` avoids that. Regression guard: `mysql_transaction_commit_and_rollback` and `postgres_transaction_commit_and_rollback`.
 - MySQL catalog output was inconsistent with PostgreSQL and SQLite: upper-case column labels (`TABLE_SCHEMA`, `COLUMN_NAME`) and `BLOB`-wrapped strings. Fix: explicit lower-case aliases plus `CAST(... AS CHAR)` for the catalog text columns that the `Any` driver reports as `BLOB`. `information_schema.columns.data_type` is still reported as binary by MySQL 8.4 even through `CONCAT`/`CONVERT`, so it keeps the documented `{encoding, text}` shape; the regression test asserts that explicitly instead of pretending it is normalized.
 - `sql_list_databases` on MySQL used `SHOW DATABASES`, whose column label is `Database` and cannot be aliased. It now reads `information_schema.schemata`, so the column is lower case and matches `sql_list_schemas`.
+- A SQLite URL with Windows separators or a drive letter could not be opened: URL parsing percent-encodes a backslash, and the `//` in `sqlite://C:/data/app.db` makes URL parsing read the drive letter as an authority with a port. Both forms failed with `unable to open database file`. SQLite URLs are now normalized to `sqlite:<path>` with `/` separators before the driver sees them. Found by the Windows CI job; `windows_paths_resolve_through_sqlx_url_parsing` covers the URL and option parsing on every platform.
 
 Verified after the fixes:
 
 - `DBCONNECTOR_INTEGRATION=1 cargo test -p dbconnector-mcp --test engines -- --test-threads=1`: 7 passed, including the four new regression tests.
+- GitHub Actions (first run on the pushed commit): `linux`, `macos`, and `integration` jobs passed; `windows` failed because the SQLite test could not open a Windows path. Fixed as described above and re-pushed.
 - A stdio probe of `target/release/dbconnector serve --allow-writes --allow-destructive` ran 18 checks over real MCP JSON-RPC: `initialize`, 35 tools with object `outputSchema`, every PostgreSQL catalog tool, `sql_explain` with `executed: false`, MySQL catalog tools, MySQL rollback and commit round trips, `TRANSACTION_NOT_FOUND` for a finished transaction id, all connections closed, and no credential on stderr.
 
 ## Behavior notes
@@ -45,7 +47,7 @@ Passed:
 
 - `cargo fmt --all -- --check`
 - `cargo clippy --workspace --all-targets -- -D warnings`
-- `cargo test --workspace` (32 tests; the live engine tests skip without `DBCONNECTOR_INTEGRATION=1`)
+- `cargo test --workspace` (34 tests; the live engine tests skip without `DBCONNECTOR_INTEGRATION=1`)
 - `cargo build --workspace --release`
 - `cargo check -p dbconnector --no-default-features`
 - `DBCONNECTOR_INTEGRATION=1 cargo test -p dbconnector-mcp --test engines -- --test-threads=1` (7 tests)
@@ -54,8 +56,8 @@ Passed:
 
 Live engines (127.0.0.1, fixture password `dbconnector_test`): PostgreSQL 16 :54329, MySQL 8 :33069, MongoDB 7 :27018, Redis 7 :63799, Valkey 8 :63809. Read and write paths were exercised through MCP for all five engines, including destructive gates, read-only accounts, MongoDB `$out`, Redis TTL and `SCAN`, and Valkey product detection.
 
-Not run here: GitHub Actions, macOS build, Windows build, MCP Inspector, Claude, a Codex or OpenCode agent turn. `codex` 0.162.1 and `opencode` 2.0.29 are installed. Their MCP commands only manage saved server entries. No server was added to user config.
+Not run here: MCP Inspector, Claude, a Codex or OpenCode agent turn, and the macOS and Windows binaries on this machine. The GitHub Actions `linux`, `macos`, and `integration` jobs ran on the pushed commit; see `docs/acceptance-report.md`. `codex` 0.162.1 and `opencode` 2.0.29 are installed. Their MCP commands only manage saved server entries. No server was added to user config.
 
 ## Next
 
-Run the GitHub workflows on macOS and Windows. Drive `tools/list` and one SQLite call from Codex and OpenCode without writing the password into a shared config. Measure `duration_ms` from the tool clock. Replace `EXPLAIN (FORMAT TEXT)` with a PostgreSQL-typed decode path if structured plans become a requirement. Consider a MariaDB container, which shares the MySQL driver path but not the MySQL 8.4 catalog types.
+Confirm the `windows` CI job and the `release` workflow's release step on the next run. Drive `tools/list` and one SQLite call from Codex and OpenCode without writing the password into a shared config. Measure `duration_ms` from the tool clock. Replace `EXPLAIN (FORMAT TEXT)` with a PostgreSQL-typed decode path if structured plans become a requirement. Consider a MariaDB container, which shares the MySQL driver path but not the MySQL 8.4 catalog types.

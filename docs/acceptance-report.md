@@ -46,6 +46,18 @@ the write path of all five engines through the MCP tools, plus one full read-onl
   `sql_explain`, MySQL catalog tools, MySQL rollback and commit round trips,
   `TRANSACTION_NOT_FOUND`, all connections closed, and no credential on stderr.
 
+### GitHub Actions
+
+The first run on the pushed commit (`ci` on `main`) reported: `linux` passed, `macos`
+passed, `integration` passed (live PostgreSQL 16, MySQL 8, MongoDB 7, Redis 7, and Valkey 8
+containers with the 7 engine tests), and `windows` failed because the SQLite test could not
+open a Windows path. The failure was `CONNECTION_FAILED: error returned from database:
+(code: 14) unable to open database file`. Root cause: URL parsing percent-encodes a
+backslash, and `sqlite://C:/...` reads the drive letter as an authority with a port. SQLite
+URLs are now normalized to `sqlite:<path>` with `/` separators. The tag push also ran the
+`release` workflow, which succeeded and attached the Linux, macOS, and Windows binaries to
+the `v0.1.0` release.
+
 ## Not passed
 
 Nothing in the commands above failed on the final run. Earlier failures (strict-client
@@ -54,12 +66,10 @@ MySQL transactions) were fixed and now have regression tests.
 
 ## Not executed
 
-- GitHub Actions jobs in `.github/workflows/ci.yml` and `release.yml`.
-- macOS and Windows builds.
 - MCP Inspector. The `mcp-inspector` command is not installed. `npx` is present and was not used to download it.
 - Claude Code. `claude` is not on `PATH`.
 - A Codex or OpenCode conversation that discovers and calls a tool. The CLIs are installed (`codex` 0.162.1, `opencode` 2.0.29). No MCP entry was written into user configuration.
-- Release checksum artifacts. The workflow is present and was not dispatched.
+- The `windows` CI job and the `release` job after the SQLite URL fix. Both are triggered by the next push.
 - MariaDB as a separate server. MySQL 8 was used. The MySQL driver path is the one MariaDB would use.
 
 ## Risks that remain
@@ -73,6 +83,9 @@ MySQL transactions) were fixed and now have regression tests.
 - PostgreSQL `sql_explain` returns the text plan because the `Any` driver cannot decode the
   `json` column of `EXPLAIN (FORMAT JSON)`.
 - SQLite reports `NULL` as the column type for computed columns such as `SELECT 1`.
+- A SQLite URL must survive URL parsing: use `sqlite:`, `sqlite://` with a relative path, or
+  `sqlite:///` with an absolute POSIX path. Windows separators and drive letters are
+  normalized, but a path that is valid only on another operating system still fails to open.
 - MongoDB `describe_collection` field types come from a sample. `DbPointer` is emitted as a placeholder because the driver fields are private.
 - The idle-connection reaper starts inside `DbServer::new`.
 

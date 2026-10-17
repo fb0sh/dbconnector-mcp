@@ -56,6 +56,12 @@ First public release.
   still reports as binary and therefore keeps the documented `{encoding, text}` wrapper.
 - `sql_list_databases` on MySQL used `SHOW DATABASES`, whose column cannot be named. It now
   reads `information_schema.schemata`, matching `sql_list_schemas`.
+- A SQLite URL with Windows separators or a drive letter could not be opened. URL parsing
+  percent-encodes a backslash, and `sqlite://C:/data/app.db` parses the drive letter as an
+  authority with a port, so `sqlite://C:\data\app.db` and `sqlite:///C:/data/app.db` both
+  failed with `unable to open database file`. SQLite URLs are now normalized to
+  `sqlite:<path>` with `/` separators before the driver sees them. Found by the Windows CI
+  job.
 
 ### Known limitations
 

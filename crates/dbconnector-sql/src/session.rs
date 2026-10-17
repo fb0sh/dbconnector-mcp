@@ -983,12 +983,7 @@ fn normalize_sqlite_url(url: &str, dialect: SqlDialect, read_only: bool) -> Stri
     if dialect != SqlDialect::Sqlite {
         return url.to_string();
     }
-    let normalized = match url.trim() {
-        "sqlite://:memory:" | "sqlite::memory:" | "sqlite:///:memory:" => {
-            "sqlite::memory:".to_string()
-        }
-        other => other.to_string(),
-    };
+    let normalized = normalize_sqlite_filename(url.trim());
     if normalized.contains(":memory:") || normalized.contains("mode=") {
         return normalized;
     }
@@ -998,6 +993,38 @@ fn normalize_sqlite_url(url: &str, dialect: SqlDialect, read_only: bool) -> Stri
     } else {
         format!("{normalized}?mode={mode}")
     }
+}
+
+/// sqlx reads a SQLite URL as `path?parameters` after the `sqlite:` scheme, so the path
+/// has to survive URL parsing unchanged.
+///
+/// - Windows separators become `/`, because URL parsing percent-encodes a backslash and
+///   the resulting name cannot be opened.
+/// - `sqlite://C:/data/app.db` would parse the drive letter as an authority with a port,
+///   so the `//` is dropped and `sqlite:C:/data/app.db` is used instead.
+/// - `sqlite:///C:/data/app.db` leaves a leading `/` in front of the drive letter, which
+///   is stripped.
+fn normalize_sqlite_filename(url: &str) -> String {
+    if matches!(
+        url,
+        "sqlite://:memory:" | "sqlite::memory:" | "sqlite:///:memory:"
+    ) {
+        return "sqlite::memory:".to_string();
+    }
+    let Some(rest) = url.strip_prefix("sqlite:") else {
+        return url.to_string();
+    };
+    let rest = rest.trim_start_matches("//").replace('\\', "/");
+    let rest = match rest.strip_prefix('/') {
+        Some(without_slash) if is_drive_path(without_slash) => without_slash.to_string(),
+        _ => rest,
+    };
+    format!("sqlite:{rest}")
+}
+
+fn is_drive_path(path: &str) -> bool {
+    let bytes = path.as_bytes();
+    bytes.len() > 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' && bytes[2] == b'/'
 }
 
 fn validate_ident(name: &str) -> Result<(), DbError> {
@@ -1046,4 +1073,97 @@ fn rows_as_objects(rows: &SqlRows) -> Vec<Value> {
             Value::Object(object)
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sqlite_url(url: &str, read_only: bool) -> String {
+        normalize_sqlite_url(url, SqlDialect::Sqlite, read_only)
+    }
+
+    #[test]
+    fn sqlite_filenames_survive_url_parsing() {
+        assert_eq!(
+            sqlite_url("sqlite:///tmp/app.db", false),
+            "sqlite:/tmp/app.db?mode=rwc"
+        );
+        assert_eq!(
+            sqlite_url("sqlite:/tmp/app.db", true),
+            "sqlite:/tmp/app.db?mode=ro"
+        );
+        assert_eq!(
+            sqlite_url("sqlite://data.db", false),
+            "sqlite:data.db?mode=rwc"
+        );
+        assert_eq!(
+            sqlite_url("sqlite://data.db?cache=shared", false),
+            "sqlite:data.db?cache=shared&mode=rwc"
+        );
+        assert_eq!(
+            sqlite_url("sqlite://data.db?mode=ro", false),
+            "sqlite:data.db?mode=ro"
+        );
+        // URL parsing percent-encodes a backslash, and `sqlite://C:` parses the drive
+        // letter as an authority with a port. Both broke opening a database on Windows.
+        assert_eq!(
+            sqlite_url(r"sqlite://C:\Users\runner\app.db", false),
+            "sqlite:C:/Users/runner/app.db?mode=rwc"
+        );
+        assert_eq!(
+            sqlite_url(r"sqlite:C:\Users\runner\app.db", true),
+            "sqlite:C:/Users/runner/app.db?mode=ro"
+        );
+        assert_eq!(
+            sqlite_url("sqlite:///C:/Users/runner/app.db", false),
+            "sqlite:C:/Users/runner/app.db?mode=rwc"
+        );
+    }
+
+    /// The two steps sqlx performs before opening the file: parse the URL, then read the
+    /// SQLite options out of it. Windows input is covered here so the check runs on Linux.
+    #[test]
+    fn windows_paths_resolve_through_sqlx_url_parsing() {
+        use sqlx::ConnectOptions;
+
+        for (input, expected) in [
+            (r"sqlite://C:\Users\runner\app.db", "C:/Users/runner/app.db"),
+            ("sqlite:///C:/Users/runner/app.db", "C:/Users/runner/app.db"),
+            (r"sqlite:C:\Users\runner\app.db", "C:/Users/runner/app.db"),
+            ("sqlite:///tmp/app.db", "/tmp/app.db"),
+            ("sqlite://data.db", "data.db"),
+        ] {
+            let normalized = sqlite_url(input, false);
+            let parsed =
+                url::Url::parse(&normalized).unwrap_or_else(|err| panic!("{normalized}: {err}"));
+            let options = sqlx::sqlite::SqliteConnectOptions::from_url(&parsed)
+                .unwrap_or_else(|err| panic!("{normalized}: {err}"));
+            assert_eq!(
+                options.get_filename().to_string_lossy(),
+                expected,
+                "{normalized}"
+            );
+        }
+    }
+
+    #[test]
+    fn sqlite_memory_urls_are_normalized() {
+        for url in ["sqlite::memory:", "sqlite://:memory:", "sqlite:///:memory:"] {
+            assert_eq!(sqlite_url(url, false), "sqlite::memory:");
+            assert_eq!(sqlite_url(url, true), "sqlite::memory:");
+        }
+    }
+
+    #[test]
+    fn other_engines_and_unknown_urls_are_untouched() {
+        let postgres = "postgres://u:p@127.0.0.1:5432/app";
+        assert_eq!(
+            normalize_sqlite_url(postgres, SqlDialect::Postgres, false),
+            postgres
+        );
+        // A string without the `sqlite:` scheme keeps its text and only gains the mode
+        // parameter; sqlx rejects the scheme with its own error.
+        assert_eq!(sqlite_url("not-a-url", false), "not-a-url?mode=rwc");
+    }
 }
