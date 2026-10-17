@@ -103,9 +103,9 @@ The compose passwords are fixtures (`dbconnector_test`) for disposable container
 `0.1.0`. The default build registers 35 tools. Verified on Linux: `fmt`, clippy with
 `-D warnings`, the full test suite, a release build, the live engine tests against
 disposable PostgreSQL 16, MySQL 8, MongoDB 7, Redis 7, and Valkey 8 containers, and a
-stdio JSON-RPC probe of the release binary that runs every catalog tool and a MySQL
-transaction round trip. macOS and Windows builds are wired into CI but have not run yet,
-and the tools have not been driven from a real agent client in this environment.
+stdio JSON-RPC probe that runs every catalog tool and a MySQL transaction round trip
+against the binary published in the `v0.1.0` release. GitHub Actions pass on Linux, macOS,
+and Windows, and the release workflow attaches a checked binary for each platform.
 Details and the remaining risks: [docs/implementation-status.md](docs/implementation-status.md)
 and [docs/acceptance-report.md](docs/acceptance-report.md).
 

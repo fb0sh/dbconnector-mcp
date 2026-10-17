@@ -28,7 +28,9 @@ in-process server (`DBCONNECTOR_INTEGRATION=1` engine tests) and `target/release
 Verified after the fixes:
 
 - `DBCONNECTOR_INTEGRATION=1 cargo test -p dbconnector-mcp --test engines -- --test-threads=1`: 7 passed, including the four new regression tests.
-- GitHub Actions (first run on the pushed commit): `linux`, `macos`, and `integration` jobs passed; `windows` failed because the SQLite test could not open a Windows path. Fixed as described above and re-pushed.
+- GitHub Actions on the tagged commit: `ci` passed on `linux`, `macos`, `windows`, and `integration`; the `release` workflow built all three platforms and its `publish` job attached six files to the `v0.1.0` release.
+- The published `dbconnector-linux-x86_64` asset was downloaded from the release, its `sha256` matched the published checksum, and the 18-check stdio probe passed against that binary. The first tag run attached only the Windows assets because every matrix job raced to create the release; the publish step now runs once after all three builds.
+- GitHub Actions (first run on the pushed commit): `linux`, `macos`, and `integration` jobs passed; `windows` failed because the SQLite test could not open a Windows path. Fixed as described above. The next run passed all four jobs.
 - A stdio probe of `target/release/dbconnector serve --allow-writes --allow-destructive` ran 18 checks over real MCP JSON-RPC: `initialize`, 35 tools with object `outputSchema`, every PostgreSQL catalog tool, `sql_explain` with `executed: false`, MySQL catalog tools, MySQL rollback and commit round trips, `TRANSACTION_NOT_FOUND` for a finished transaction id, all connections closed, and no credential on stderr.
 
 ## Behavior notes
@@ -56,8 +58,8 @@ Passed:
 
 Live engines (127.0.0.1, fixture password `dbconnector_test`): PostgreSQL 16 :54329, MySQL 8 :33069, MongoDB 7 :27018, Redis 7 :63799, Valkey 8 :63809. Read and write paths were exercised through MCP for all five engines, including destructive gates, read-only accounts, MongoDB `$out`, Redis TTL and `SCAN`, and Valkey product detection.
 
-Not run here: MCP Inspector, Claude, a Codex or OpenCode agent turn, and the macOS and Windows binaries on this machine. The GitHub Actions `linux`, `macos`, and `integration` jobs ran on the pushed commit; see `docs/acceptance-report.md`. `codex` 0.162.1 and `opencode` 2.0.29 are installed. Their MCP commands only manage saved server entries. No server was added to user config.
+Not run here: MCP Inspector, Claude, and a Codex or OpenCode agent turn. `codex` 0.162.1 and `opencode` 2.0.29 are installed; their MCP commands only manage saved server entries, and no server was added to user config. macOS and Windows binaries were built by CI, not on this machine.
 
 ## Next
 
-Confirm the `windows` CI job and the `release` workflow's release step on the next run. Drive `tools/list` and one SQLite call from Codex and OpenCode without writing the password into a shared config. Measure `duration_ms` from the tool clock. Replace `EXPLAIN (FORMAT TEXT)` with a PostgreSQL-typed decode path if structured plans become a requirement. Consider a MariaDB container, which shares the MySQL driver path but not the MySQL 8.4 catalog types.
+Drive `tools/list` and one SQLite call from Codex and OpenCode without writing the password into a shared config. Measure `duration_ms` from the tool clock. Replace `EXPLAIN (FORMAT TEXT)` with a PostgreSQL-typed decode path if structured plans become a requirement. Consider a MariaDB container, which shares the MySQL driver path but not the MySQL 8.4 catalog types.

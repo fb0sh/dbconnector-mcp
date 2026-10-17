@@ -54,9 +54,23 @@ containers with the 7 engine tests), and `windows` failed because the SQLite tes
 open a Windows path. The failure was `CONNECTION_FAILED: error returned from database:
 (code: 14) unable to open database file`. Root cause: URL parsing percent-encodes a
 backslash, and `sqlite://C:/...` reads the drive letter as an authority with a port. SQLite
-URLs are now normalized to `sqlite:<path>` with `/` separators. The tag push also ran the
-`release` workflow, which succeeded and attached the Linux, macOS, and Windows binaries to
-the `v0.1.0` release.
+URLs are now normalized to `sqlite:<path>` with `/` separators.
+
+After that fix, the `ci` workflow passed all four jobs (`linux`, `macos`, `windows`,
+`integration`) on both `main` and the `v0.1.0` tag.
+
+### Release assets
+
+The first tag run attached only the Windows assets: all three matrix jobs ran
+`gh release view || gh release create` and then `gh release upload`, so the jobs raced to
+create the release and the uploads that lost the race had nowhere to go. The workflow now
+has a single `publish` job that `needs: artifacts`, downloads all three platforms, and
+attaches them together.
+
+On the re-run the `release` workflow built Linux x86_64, macOS aarch64, and Windows x86_64
+and the `publish` job attached six files to the `v0.1.0` release. The
+`dbconnector-linux-x86_64` asset was downloaded from the release, its `sha256` matched the
+published checksum, and the 18-check stdio probe passed against that exact binary.
 
 ## Not passed
 
@@ -69,7 +83,7 @@ MySQL transactions) were fixed and now have regression tests.
 - MCP Inspector. The `mcp-inspector` command is not installed. `npx` is present and was not used to download it.
 - Claude Code. `claude` is not on `PATH`.
 - A Codex or OpenCode conversation that discovers and calls a tool. The CLIs are installed (`codex` 0.162.1, `opencode` 2.0.29). No MCP entry was written into user configuration.
-- The `windows` CI job and the `release` job after the SQLite URL fix. Both are triggered by the next push.
+- Running the macOS and Windows binaries. They are built and published by CI but were not executed on those systems from this machine.
 - MariaDB as a separate server. MySQL 8 was used. The MySQL driver path is the one MariaDB would use.
 
 ## Risks that remain
@@ -95,4 +109,13 @@ MySQL transactions) were fixed and now have regression tests.
 docker compose -f docker-compose.test.yml up -d --wait
 DBCONNECTOR_INTEGRATION=1 cargo test -p dbconnector-mcp --test engines -- --test-threads=1
 docker compose -f docker-compose.test.yml down -v
+```
+
+## How to repeat the published-binary check
+
+```bash
+gh release download v0.1.0 --pattern 'dbconnector-linux-x86_64*' --dir /tmp/dbconnector-assets
+cd /tmp/dbconnector-assets && sha256sum -c dbconnector-linux-x86_64.sha256
+# then run `dbconnector-linux-x86_64 serve --allow-writes --allow-destructive` as a stdio
+# MCP server against the disposable stack and call the catalog and transaction tools.
 ```
