@@ -1,0 +1,88 @@
+# Ephemeral engines for integration tests. Passwords here are fixtures, not secrets.
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: dbconnector
+      POSTGRES_PASSWORD: dbconnector_test
+      POSTGRES_DB: app
+    ports:
+      - "127.0.0.1:54329:5432"
+    volumes:
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dbconnector -d app"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  mysql:
+    image: mysql:8
+    environment:
+      MYSQL_ROOT_PASSWORD: dbconnector_test
+      MYSQL_DATABASE: app
+      MYSQL_USER: dbconnector
+      MYSQL_PASSWORD: dbconnector_test
+    ports:
+      - "127.0.0.1:33069:3306"
+    volumes:
+      - ./docker/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-udbconnector", "-pdbconnector_test"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+
+  mongo:
+    image: mongo:7
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: dbconnector_test
+    ports:
+      - "127.0.0.1:27018:27017"
+    volumes:
+      - ./docker/mongo/init.js:/docker-entrypoint-initdb.d/init.js:ro
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "mongosh",
+          "--quiet",
+          "-u",
+          "root",
+          "-p",
+          "dbconnector_test",
+          "--authenticationDatabase",
+          "admin",
+          "--eval",
+          "db.runCommand({ ping: 1 })",
+        ]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+
+  redis:
+    image: redis:7
+    ports:
+      - "127.0.0.1:63799:6379"
+    volumes:
+      - ./docker/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  valkey:
+    image: valkey/valkey:8
+    ports:
+      - "127.0.0.1:63809:6379"
+    volumes:
+      - ./docker/valkey/valkey.conf:/etc/valkey/valkey.conf:ro
+    command: ["valkey-server", "/etc/valkey/valkey.conf"]
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30

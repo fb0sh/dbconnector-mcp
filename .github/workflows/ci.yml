@@ -1,0 +1,59 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: fmt
+        run: cargo fmt --all -- --check
+      - name: clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: test
+        run: cargo test --workspace
+      - name: release
+        run: cargo build --workspace --release
+      - name: no-default-features
+        run: cargo check -p dbconnector --no-default-features
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - run: cargo test --workspace
+      - run: cargo build --workspace --release
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - run: cargo test --workspace
+      - run: cargo build --workspace --release
+
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: start engines
+        run: docker compose -f docker-compose.test.yml up -d --wait
+      - name: integration tests
+        run: cargo test -p dbconnector-mcp --test engines -- --test-threads=1
+        env:
+          DBCONNECTOR_INTEGRATION: "1"
+      - name: stop engines
+        if: always()
+        run: docker compose -f docker-compose.test.yml down -v

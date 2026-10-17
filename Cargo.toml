@@ -1,0 +1,75 @@
+[workspace]
+resolver = "2"
+members = [
+    ".",
+    "crates/dbconnector-core",
+    "crates/dbconnector-sql",
+    "crates/dbconnector-mongo",
+    "crates/dbconnector-redis",
+    "crates/dbconnector-mcp",
+]
+default-members = [".", "crates/dbconnector-mcp"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+rust-version = "1.88"
+publish = false
+
+[workspace.dependencies]
+anyhow = "1"
+async-trait = "0.1"
+base64 = "0.22"
+bson = "2"
+chrono = { version = "0.4", features = ["serde"] }
+clap = { version = "4", features = ["derive"] }
+dbconnector-core = { path = "crates/dbconnector-core" }
+dbconnector-mcp = { path = "crates/dbconnector-mcp", default-features = false }
+dbconnector-mongo = { path = "crates/dbconnector-mongo" }
+dbconnector-redis = { path = "crates/dbconnector-redis" }
+dbconnector-sql = { path = "crates/dbconnector-sql" }
+futures = "0.3"
+mongodb = "3"
+regex = "1"
+rmcp = { version = "3.5", features = ["server", "transport-io", "macros", "schemars"] }
+schemars = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sqlparser = { version = "0.58", features = ["visitor"] }
+sqlx = { version = "0.8", features = ["runtime-tokio", "tls-rustls", "postgres", "mysql", "sqlite", "any", "json", "chrono", "uuid", "time"] }
+thiserror = "2"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time", "io-std", "io-util", "process"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+url = "2"
+uuid = { version = "1", features = ["v4", "serde"] }
+redis = { version = "0.32", features = ["tokio-comp", "connection-manager", "tokio-rustls-comp"] }
+
+[package]
+name = "dbconnector"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+description = "stdio-only MCP server for SQL, MongoDB, and Redis/Valkey"
+default-run = "dbconnector"
+
+[[bin]]
+name = "dbconnector"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+dbconnector-core.workspace = true
+dbconnector-mcp.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[features]
+default = ["sql", "mongo", "redis"]
+sql = ["dbconnector-mcp/sql"]
+mongo = ["dbconnector-mcp/mongo"]
+redis = ["dbconnector-mcp/redis"]
